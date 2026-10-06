@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Input Raport Siswa Realtime - Cloud Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sticky-col { position: sticky; left: 0; z-index: 10; background-color: white; }
+        .sticky-col-header { position: sticky; left: 0; z-index: 20; background-color: #065f46; }
+        @media print { body { background: white !important; } no-print { display: none !important; } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebaseAppModules = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, setDoc, onSnapshot
+        };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const ADMIN_PASSWORD_HASH = "@SMPN38BDL";
+
+        const LIST_MAPEL = [
+            "BAHASA INDONESIA",
+            "MATEMATIKA",
+            "PJOK",
+            "IPS",
+            "BAHASA INGGRIS",
+            "IPA",
+            "PRAKARYA",
+            "PAI",
+            "PAK",
+            "BAHASA LAMPUNG",
+            "INFORMATIKA",
+            "PENDIDIKAN PANCASILA"
+        ];
+
+        const RAW_SISWA = [
+            { nama: "ADE EVA KINANTI", nisn: "3129411935 / 885" },
+            { nama: "ADINDA SHEFA RHAMADANI", nisn: "3127863650 / 914" },
+            { nama: "AHMAD RAIHAN", nisn: "3122114250 / 856" },
+            { nama: "Alvino Ridwan Pratama", nisn: "3125344952 / 918" },
+            { nama: "AMANDA AFRILIA", nisn: "3131304403 / 824" },
+            { nama: "CAHYA BR SINAMBELA", nisn: "3134737824 / 862" },
+            { nama: "DARWAN ALVIANSYAH", nisn: "3118785290 / 828" },
+            { nama: "DIAN APRILIA PUTRI", nisn: "0131953770 / 774" },
+            { nama: "Ghlora Noe Kheyla", nisn: "3124582037 / 924" },
+            { nama: "Haikal Pratama", nisn: "3133700552 / 897" },
+            { nama: "HOLIK AKBAR", nisn: "0112101455 / 805" },
+            { nama: "IQBAL HIDAYATULLOH", nisn: "3129498244 / 834" },
+            { nama: "JUNI PRATAMA", nisn: "0134723977 / 777" },
+            { nama: "Kafa Jehsen Cristian", nisn: "3123487042 / 836" },
+            { nama: "M. ARIFIN", nisn: "0139786472 / 780" },
+            { nama: "M. KHAIRUL AZZAM", nisn: "3127703195 / 867" },
+            { nama: "MINAFA ADZKIA MALVIN", nisn: "0129245373 / 785" },
+            { nama: "Muhamad Alfatih Suherman", nisn: "3136389666 / 931" },
+            { nama: "MUHAMMAD REVAN ABI PRATAMA", nisn: "3139087706 / 873" },
+            { nama: "MUHAMMAD RIDHO SAPUTRA", nisn: "3137282405 / 842" },
+            { nama: "Naila Azzahra Sopyan", nisn: "0131511541 / 817" },
+            { nama: "NAUFAL SHIDQI ARLIS", nisn: "3133773381 / 908" },
+            { nama: "Nirmala Nia Putri", nisn: "3133142931 / 936" },
+            { nama: "POLIN MANURUNG", nisn: "3126649207 / 877" },
+            { nama: "RAYSHA SESALIA WATTY", nisn: "3137634731 / 791" },
+            { nama: "RYAN DWI ISNANTO", nisn: "0136957159 / 879" },
+            { nama: "SALWA NABILA PUTRI", nisn: "0138991945 / 848" },
+            { nama: "SILSILA FADILA", nisn: "0126877999 / 944" },
+            { nama: "SUCI MASNAWATI", nisn: "3133626364 / 943" },
+            { nama: "Syami Ahmad Azzanky", nisn: "0135342382 / 852" },
+            { nama: "ZAHRA ANYA RACHMA LAKSONO", nisn: "3132548482 / 913" }
+        ];
+
+        const DEFAULT_SISWA = RAW_SISWA.map(item => item.nama.toUpperCase());
+        const NISN_MAP = RAW_SISWA.reduce((acc, item) => {
+            acc[item.nama.toUpperCase()] = item.nisn;
+            return acc;
+        }, {});
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('input');
+            const [selectedMapel, setSelectedMapel] = useState(LIST_MAPEL[0]);
+            const [gradesData, setGradesData] = useState({});
+            
+            const [logoKota, setLogoKota] = useState("https://upload.wikimedia.org/wikipedia/commons/e/ed/Logo_Kota_Bandar_Lampung_%28Tangkai_Padi_dan_Kapas%29.png");
+            const [logoSekolah, setLogoSekolah] = useState("https://upload.wikimedia.org/wikipedia/commons/e/ed/Logo_Kota_Bandar_Lampung_%28Tangkai_Padi_dan_Kapas%29.png");
+            
+            const [loading, setLoading] = useState(false);
+            const [statusMessage, setStatusMessage] = useState({ type: 'info', text: 'Menghubungkan ke Cloud Realtime Database...' });
+            
+            const [showAdminModal, setShowAdminModal] = useState(false);
+            const [adminPassword, setAdminPassword] = useState('');
+            const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+            const [adminError, setAdminError] = useState('');
+
+            const [showSingleModal, setShowSingleModal] = useState(false);
+            const [selectedSiswaSingle, setSelectedSiswaSingle] = useState(DEFAULT_SISWA[0]);
+            const [isWordGenerating, setIsWordGenerating] = useState(false);
+            const [isBulkWordGenerating, setIsBulkWordGenerating] = useState(false);
+            const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+            const [attendance, setAttendance] = useState({ sakit: '', ijin: '', alpa: '' });
+            
+            const [dbInstance, setDbInstance] = useState(null);
+            const [authInstance, setAuthInstance] = useState(null);
+            const [userId, setUserId] = useState(null);
+            
+            const debouncedTimeoutRef = useRef(null);
+
+            const getInitialGrades = () => {
+                const initial = {};
+                DEFAULT_SISWA.forEach(nama => {
+                    initial[nama] = {};
+                    LIST_MAPEL.forEach(mapel => {
+                        initial[nama][mapel] = { ph1: '', ph2: '', pts: '' };
+                    });
+                });
+                return initial;
+            };
+
+            useEffect(() => {
+                const initFirebase = async () => {
+                    try {
+                        if (!window.firebaseAppModules) {
+                            setGradesData(getInitialGrades());
+                            setStatusMessage({ type: 'info', text: 'Mode lokal aktif.' });
+                            return;
+                        }
+
+                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore } = window.firebaseAppModules;
+                        
+                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+                        if (!firebaseConfig) {
+                            setGradesData(getInitialGrades());
+                            setStatusMessage({ type: 'info', text: 'Mode Lokal Aktif.' });
+                            return;
+                        }
+
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        const db = getFirestore(app);
+
+                        setAuthInstance(auth);
+                        setDbInstance(db);
+
+                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+                        if (token) {
+                            await signInWithCustomToken(auth, token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+
+                        onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                            } else {
+                                setUserId(crypto.randomUUID());
+                            }
+                        });
+                    } catch (err) {
+                        console.warn("Firebase initialization error:", err);
+                        setGradesData(getInitialGrades());
+                        setStatusMessage({ type: 'info', text: 'Mode Lokal Aktif.' });
+                    }
+                };
+
+                initFirebase();
+            }, []);
+
+            useEffect(() => {
+                if (!dbInstance) {
+                    setGradesData(getInitialGrades());
+                    return;
+                }
+
+                const { doc, onSnapshot } = window.firebaseAppModules;
+                // Fix path to have an even number of segments (collection/document/collection/document)
+                const docRef = doc(dbInstance, 'artifacts', 'smpn38-raport-v1-data', 'public', 'master_grades');
+
+                const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const cloudData = docSnap.data();
+                        if (cloudData && cloudData.grades) {
+                            setGradesData(cloudData.grades);
+                            setStatusMessage({ type: 'success', text: 'Terhubung Real-Time ke Cloud Database!' });
+                            setTimeout(() => setStatusMessage({ type: '', text: '' }), 3000);
+                        } else {
+                            setGradesData(getInitialGrades());
+                        }
+                    } else {
+                        setGradesData(getInitialGrades());
+                        setStatusMessage({ type: 'info', text: 'Database kosong, menginisialisasi nilai awal.' });
+                    }
+                }, (error) => {
+                    console.warn("Snapshot error:", error);
+                    setGradesData(getInitialGrades());
+                    setStatusMessage({ type: 'info', text: 'Menggunakan data lokal.' });
+                });
+
+                return () => unsubscribe();
+            }, [dbInstance]);
+
+            const updateRemoteGrades = async (newGrades) => {
+                if (!dbInstance) return;
+
+                try {
+                    const { doc, setDoc } = window.firebaseAppModules;
+                    const docRef = doc(dbInstance, 'artifacts', 'smpn38-raport-v1-data', 'public', 'master_grades');
+                    await setDoc(docRef, { grades: newGrades, updatedAt: new Date().toISOString() });
+                } catch (err) {
+                    console.warn("Error updating cloud grades:", err);
+                }
+            };
+
+            const handleGradeChange = (nama, mapel, field, value) => {
+                if (value !== '') {
+                    const num = Number(value);
+                    if (isNaN(num) || num < 0 || num > 100) return;
+                }
+
+                setGradesData(prev => {
+                    const updated = {
+                        ...prev,
+                        [nama]: {
+                            ...prev[nama],
+                            [mapel]: {
+                                ...prev[nama]?.[mapel],
+                                [field]: value
+                            }
+                        }
+                    };
+
+                    if (debouncedTimeoutRef.current) clearTimeout(debouncedTimeoutRef.current);
+                    debouncedTimeoutRef.current = setTimeout(() => {
+                        updateRemoteGrades(updated);
+                    }, 400);
+
+                    return updated;
+                });
+            };
+
+            const handleManualSync = async () => {
+                setLoading(true);
+                setStatusMessage({ type: 'info', text: 'Menyimpan nilai ke cloud...' });
+                await updateRemoteGrades(gradesData);
+                setTimeout(() => {
+                    setLoading(false);
+                    setStatusMessage({ type: 'success', text: 'Berhasil disimpan dan disinkronkan ke semua perangkat!' });
+                    setTimeout(() => setStatusMessage({ type: '', text: '' }), 3000);
+                }, 600);
+            };
+
+            const handleAdminLogin = (e) => {
+                e.preventDefault();
+                if (adminPassword === ADMIN_PASSWORD_HASH) {
+                    setIsAdminAuthenticated(true);
+                    setShowAdminModal(false);
+                    setAdminPassword('');
+                    setAdminError('');
+                    setActiveTab('admin');
+                } else {
+                    setAdminError('Password salah!');
+                }
+            };
+
+            const handleLogoUpload = (e, type) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (uploadEvent) => {
+                    const result = uploadEvent.target.result;
+                    if (type === 'kota') setLogoKota(result);
+                    else if (type === 'sekolah') setLogoSekolah(result);
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const exportToExcel = () => {
+                const rekapRows = [];
+                rekapRows.push(["MASTER REKAP NILAI RAPORT SISWA REALTIME"]);
+                rekapRows.push([`Diexport pada: ${new Date().toLocaleString()}`]);
+                rekapRows.push([]);
+
+                const headerRow1 = ["NO", "NAMA SISWA"];
+                LIST_MAPEL.forEach(mapel => headerRow1.push(mapel, "", ""));
+                rekapRows.push(headerRow1);
+
+                const headerRow2 = ["", ""];
+                LIST_MAPEL.forEach(() => headerRow2.push("PH 1", "PH 2", "PTS"));
+                rekapRows.push(headerRow2);
+
+                DEFAULT_SISWA.forEach((nama, idx) => {
+                    const rowData = [idx + 1, nama];
+                    LIST_MAPEL.forEach(mapel => {
+                        const score = gradesData[nama]?.[mapel] || { ph1: '', ph2: '', pts: '' };
+                        rowData.push(score.ph1 !== '' ? Number(score.ph1) : '');
+                        rowData.push(score.ph2 !== '' ? Number(score.ph2) : '');
+                        rowData.push(score.pts !== '' ? Number(score.pts) : '');
+                    });
+                    rekapRows.push(rowData);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(rekapRows);
+                if (!ws['!merges']) ws['!merges'] = [];
+                ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 + (LIST_MAPEL.length * 3) - 1 } });
+                ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 2 + (LIST_MAPEL.length * 3) - 1 } });
+
+                LIST_MAPEL.forEach((mapel, index) => {
+                    const startCol = 2 + (index * 3);
+                    ws['!merges'].push({ s: { r: 3, c: startCol }, e: { r: 3, c: startCol + 2 } });
+                });
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Master Rekap Nilai");
+                XLSX.writeFile(wb, "Master_Rekap_Nilai_Raport_Realtime.xlsx");
+            };
+
+            const getWordHtmlString = (targetSiswa) => {
+                const subjects = [
+                    { no: "1", name: "Pendidikan Agama dan Budi Pekerti", key: "PAI" },
+                    { no: "2", name: "Pendidikan Pancasila dan Kewarganegaraan", key: "PENDIDIKAN PANCASILA" },
+                    { no: "3", name: "Bahasa Indonesia", key: "BAHASA INDONESIA" },
+                    { no: "4", name: "Matematika", key: "MATEMATIKA" },
+                    { no: "5", name: "Ilmu Pengetahuan Alam", key: "IPA" },
+                    { no: "6", name: "Ilmu Pengetahuan Sosial", key: "IPS" },
+                    { no: "7", name: "Bahasa Inggris", key: "BAHASA INGGRIS" },
+                    { no: "8", name: "Pend Jasmani Olah Raga dan Kesehatan", key: "PJOK" },
+                    { no: "9", name: "Informatika", key: "INFORMATIKA" },
+                    { no: "10", name: "Seni Budaya & Prakarya", key: "PRAKARYA" },
+                    { no: "11", name: "Muatan Lokal", key: "__mulok__", isHeader: true },
+                    { no: "a.", name: "Bahasa Lampung", key: "BAHASA LAMPUNG", isSub: true },
+                    { no: "b.", name: "Pendidikan Anti Korupsi", key: "PAK", isSub: true }
+                ];
+
+                let rowsHtml = '';
+                subjects.forEach((item) => {
+                    if (item.isHeader) {
+                        rowsHtml += `
+                            <tr>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; background-color: #f1f5f9; font-weight: bold;">11</td>
+                                <td style="border: 1px solid #000; padding: 4px; background-color: #f1f5f9; font-weight: bold;" colspan="5">Muatan Lokal</td>
+                            </tr>
+                        `;
+                    } else {
+                        const score = gradesData[targetSiswa]?.[item.key] || { ph1: '', ph2: '', pts: '' };
+                        const ph1 = score.ph1 !== '' ? Number(score.ph1) : '';
+                        const ph2 = score.ph2 !== '' ? Number(score.ph2) : '';
+                        const pts = score.pts !== '' ? Number(score.pts) : '';
+                        const valid = [ph1, ph2, pts].filter(v => typeof v === 'number' && !isNaN(v));
+                        const avg = valid.length > 0 ? (valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(1) : '';
+                        const paddingLeft = item.isSub ? 'padding-left: 15px;' : '';
+
+                        rowsHtml += `
+                            <tr>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; font-size: 10pt;">${item.no}</td>
+                                <td style="border: 1px solid #000; padding: 4px; font-size: 10pt; ${paddingLeft}">${item.name}</td>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; font-size: 10pt;">${ph1}</td>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; font-size: 10pt;">${ph2}</td>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; font-size: 10pt;">${pts}</td>
+                                <td style="border: 1px solid #000; padding: 4px; text-align: center; font-size: 10pt; font-weight: bold;">${avg}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                const sVal = Number(attendance.sakit || 0);
+                const iVal = Number(attendance.ijin || 0);
+                const aVal = Number(attendance.alpa || 0);
+                const totalVal = sVal + iVal + aVal;
+                const targetNisn = NISN_MAP[targetSiswa] || "-";
+
+                return `
+                    <div style="font-family: Arial, sans-serif; font-size: 11pt; color: #000000; margin-bottom: 30px;">
+                        <table style="width: 100%; border-collapse: collapse; border-bottom: 3px double #000; margin-bottom: 10px; padding-bottom: 5px;">
+                            <tr>
+                                <td style="width: 15%; text-align: center; vertical-align: middle;">
+                                    <img src="${logoKota}" width="50" height="60" style="object-fit: contain;" />
+                                </td>
+                                <td style="width: 70%; text-align: center; vertical-align: middle;">
+                                    <p style="margin: 0; font-size: 11pt; font-weight: bold;">DINAS PENDIDIKAN DAN KEBUDAYAAN</p>
+                                    <p style="margin: 2px 0; font-size: 13pt; font-weight: bold;">SMP NEGERI 38 BANDAR LAMPUNG</p>
+                                    <p style="margin: 0; font-size: 9pt; font-style: italic;">Jl. Ikan Sembilang No. 16 Sukaraja - Bumi Waras Kode Pos. 35226</p>
+                                    <p style="margin: 2px 0; font-size: 10pt; font-weight: bold;">BANDAR LAMPUNG</p>
+                                </td>
+                                <td style="width: 15%; text-align: center; vertical-align: middle;">
+                                    <img src="${logoSekolah}" width="55" height="55" style="object-fit: contain;" />
+                                </td>
+                            </tr>
+                        </table>
+                        <div style="text-align: center; margin-bottom: 15px;">
+                            <p style="margin: 0; font-size: 11pt; font-weight: bold;">LAPORAN HASIL PEMBELAJARAN SUMATIF TENGAH SEMESTER GANJIL</p>
+                            <p style="margin: 2px 0; font-size: 10pt; font-weight: bold;">TAHUN PELAJARAN 2026/2027</p>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 10pt;">
+                            <tr>
+                                <td style="width: 15%; padding: 2px 0; font-weight: bold;">Nama Siswa</td>
+                                <td style="width: 2%; padding: 2px 0;">:</td>
+                                <td style="width: 48%; padding: 2px 0; font-weight: bold;">${targetSiswa}</td>
+                                <td style="width: 15%; padding: 2px 0; font-weight: bold;">Kelas</td>
+                                <td style="width: 2%; padding: 2px 0;">:</td>
+                                <td style="width: 18%; padding: 2px 0;">8.C</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 2px 0; font-weight: bold;">NISN</td>
+                                <td style="padding: 2px 0;">:</td>
+                                <td style="padding: 2px 0;">${targetNisn}</td>
+                                <td style="padding: 2px 0; font-weight: bold;">Semester</td>
+                                <td style="padding: 2px 0;">:</td>
+                                <td style="padding: 2px 0;">Ganjil</td>
+                            </tr>
+                        </table>
+                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10pt;">
+                            <thead>
+                                <tr style="background-color: #f8fafc; text-align: center; font-weight: bold;">
+                                    <th style="border: 1px solid #000; padding: 5px; width: 6%;">NO</th>
+                                    <th style="border: 1px solid #000; padding: 5px; text-align: left; width: 44%;">MATA PELAJARAN</th>
+                                    <th style="border: 1px solid #000; padding: 5px; width: 13%;">PENILAIAN HARIAN 1</th>
+                                    <th style="border: 1px solid #000; padding: 5px; width: 13%;">PENILAIAN HARIAN 2</th>
+                                    <th style="border: 1px solid #000; padding: 5px; width: 14%;">PENILAIAN TENGAH SEMESTER</th>
+                                    <th style="border: 1px solid #000; padding: 5px; width: 10%;">RATA-RATA</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                        <table style="width: 50%; border-collapse: collapse; margin-bottom: 25px; font-size: 10pt;">
+                            <thead>
+                                <tr style="background-color: #f8fafc; text-align: center; font-weight: bold;">
+                                    <th style="border: 1px solid #000; padding: 4px;" colspan="5">Kehadiran</th>
+                                </tr>
+                                <tr style="background-color: #f8fafc; text-align: center; font-weight: bold;">
+                                    <td style="border: 1px solid #000; padding: 4px;">Sakit</td>
+                                    <td style="border: 1px solid #000; padding: 4px;">Ijin</td>
+                                    <td style="border: 1px solid #000; padding: 4px;">Alpa</td>
+                                    <td style="border: 1px solid #000; padding: 4px;" colspan="2">Jumlah</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="text-align: center; font-weight: bold;">
+                                    <td style="border: 1px solid #000; padding: 4px;">${sVal}</td>
+                                    <td style="border: 1px solid #000; padding: 4px;">${iVal}</td>
+                                    <td style="border: 1px solid #000; padding: 4px;">${aVal}</td>
+                                    <td style="border: 1px solid #000; padding: 4px;" colspan="2">${totalVal}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
+                            <tr>
+                                <td style="width: 50%; vertical-align: top;">
+                                    <p style="margin: 0;">Mengetahui,</p>
+                                    <p style="margin: 0; font-weight: bold;">Orang Tua / Wali Siswa</p>
+                                    <br/><br/><br/>
+                                    <p style="margin: 0; font-weight: bold;">( .................................................... )</p>
+                                </td>
+                                <td style="width: 50%; vertical-align: top; text-align: right;">
+                                    <p style="margin: 0;">Bandar Lampung, 09 Oktober 2026</p>
+                                    <p style="margin: 0; font-weight: bold;">Wali Kelas 8.C</p>
+                                    <br/><br/><br/>
+                                    <p style="margin: 0; font-weight: bold; text-decoration: underline;">ROSLINA, S.Pd.,Gr.</p>
+                                    <p style="margin: 0;">NIP 198510142021212004</p>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                `;
+            };
+
+            const downloadWordReport = () => {
+                setIsWordGenerating(true);
+                try {
+                    const innerContent = getWordHtmlString(selectedSiswaSingle);
+                    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Raport STS</title></head><body>${innerContent}</body></html>`;
+                    const converted = htmlDocx.asBlob(htmlContent);
+                    saveAs(converted, `Raport_STS_${selectedSiswaSingle.replace(/[^a-zA-Z0-9]/g, "_")}.docx`);
+                } catch (err) {
+                    console.error("Word generation error:", err);
+                } finally {
+                    setIsWordGenerating(false);
+                }
+            };
+
+            const downloadAllSiswaWord = async () => {
+                setIsBulkWordGenerating(true);
+                setBulkProgress({ current: 0, total: DEFAULT_SISWA.length });
+                try {
+                    let combinedHtml = '';
+                    for (let i = 0; i < DEFAULT_SISWA.length; i++) {
+                        const nama = DEFAULT_SISWA[i];
+                        setBulkProgress({ current: i + 1, total: DEFAULT_SISWA.length });
+                        combinedHtml += getWordHtmlString(nama);
+                        if (i < DEFAULT_SISWA.length - 1) combinedHtml += `<br style="page-break-after: always;" />`;
+                        await new Promise(r => setTimeout(r, 20));
+                    }
+                    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Semua Raport STS</title></head><body>${combinedHtml}</body></html>`;
+                    const converted = htmlDocx.asBlob(htmlContent);
+                    saveAs(converted, 'Semua_Raport_STS_Siswa_Gabungan.docx');
+                } catch (err) {
+                    console.error("Bulk Word error:", err);
+                } finally {
+                    setIsBulkWordGenerating(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-50">
+                    <header className="bg-emerald-700 text-white shadow-md sticky top-0 z-30">
+                        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-emerald-800 p-2.5 rounded-xl border border-emerald-600 shadow-inner">
+                                    <i className="fa-solid fa-graduation-cap text-xl text-emerald-200"></i>
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h1 className="text-lg font-bold tracking-tight">RAPORT SISWA CLOUD SYNC</h1>
+                                        <span className="bg-emerald-600 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border border-emerald-500">Real-Time Cloud</span>
+                                    </div>
+                                    <p className="text-xs text-emerald-200">SMP Negeri 38 Bandar Lampung</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setActiveTab('input')}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                                        activeTab === 'input' ? 'bg-white text-emerald-800 shadow' : 'bg-emerald-800/60 text-white hover:bg-emerald-600'
+                                    }`}
+                                >
+                                    <i className="fa-solid fa-pen-to-square"></i> Input Guru Mapel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (isAdminAuthenticated) setActiveTab('admin');
+                                        else setShowAdminModal(true);
+                                    }}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                                        activeTab === 'admin' ? 'bg-white text-emerald-800 shadow' : 'bg-emerald-800/60 text-white hover:bg-emerald-600'
+                                    }`}
+                                >
+                                    <i className="fa-solid fa-lock"></i> Master Rekap (Admin)
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+                        {statusMessage.text && (
+                            <div className={`mb-4 p-4 rounded-xl text-sm font-medium flex items-center gap-3 shadow-sm transition-all ${
+                                statusMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                                statusMessage.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 
+                                'bg-blue-50 text-blue-800 border border-blue-200'
+                            }`}>
+                                <i className={`fa-solid ${
+                                    statusMessage.type === 'success' ? 'fa-circle-check text-emerald-600 text-lg' :
+                                    statusMessage.type === 'error' ? 'fa-circle-exclamation text-red-600 text-lg' : 
+                                    'fa-spinner fa-spin text-blue-600 text-lg'
+                                }`}></i>
+                                <span>{statusMessage.text}</span>
+                            </div>
+                        )}
+
+                        {activeTab === 'input' ? (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div>
+                                        <h2 className="text-base font-bold text-slate-800">Form Input Nilai Mata Pelajaran (Real-Time Cloud)</h2>
+                                        <p className="text-xs text-slate-500 mt-0.5">Setiap perubahan nilai langsung tersimpan ke cloud dan otomatis tampil di perangkat lain tanpa perlu refresh.</p>
+                                    </div>
+                                    <div className="w-full md:w-auto flex items-center gap-2">
+                                        <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Mapel:</label>
+                                        <select
+                                            value={selectedMapel}
+                                            onChange={(e) => setSelectedMapel(e.target.value)}
+                                            className="w-full md:w-64 bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                                        >
+                                            {LIST_MAPEL.map(m => (
+                                                <option key={m} value={m}>{m}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-emerald-800 text-white text-xs uppercase tracking-wider">
+                                                <th className="py-3 px-4 w-16 text-center">No</th>
+                                                <th className="py-3 px-4">Nama Siswa</th>
+                                                <th className="py-3 px-4 text-center w-32">PH 1 (0-100)</th>
+                                                <th className="py-3 px-4 text-center w-32">PH 2 (0-100)</th>
+                                                <th className="py-3 px-4 text-center w-32">PTS (0-100)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-sm">
+                                            {DEFAULT_SISWA.map((nama, idx) => {
+                                                const score = gradesData[nama]?.[selectedMapel] || { ph1: '', ph2: '', pts: '' };
+                                                return (
+                                                    <tr key={nama} className="hover:bg-slate-50/80 transition-colors">
+                                                        <td className="py-3 px-4 text-center text-slate-500 font-medium">{idx + 1}</td>
+                                                        <td className="py-3 px-4 font-semibold text-slate-800">{nama}</td>
+                                                        <td className="py-2 px-3 text-center">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                value={score.ph1}
+                                                                onChange={(e) => handleGradeChange(nama, selectedMapel, 'ph1', e.target.value)}
+                                                                placeholder="0"
+                                                                className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 text-sm font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3 text-center">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                value={score.ph2}
+                                                                onChange={(e) => handleGradeChange(nama, selectedMapel, 'ph2', e.target.value)}
+                                                                placeholder="0"
+                                                                className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 text-sm font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3 text-center">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                value={score.pts}
+                                                                onChange={(e) => handleGradeChange(nama, selectedMapel, 'pts', e.target.value)}
+                                                                placeholder="0"
+                                                                className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2 text-sm font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                                        <i className="fa-solid fa-circle-info text-emerald-600"></i>
+                                        <span>Perubahan tersimpan otomatis secara real-time ke cloud server.</span>
+                                    </div>
+                                    <button
+                                        onClick={handleManualSync}
+                                        disabled={loading}
+                                        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                    >
+                                        {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-floppy-disk"></i>}
+                                        <span>Simpan (Sesuai Mapel)</span>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-base font-bold text-slate-800">Master Rekap Nilai Seluruh Mata Pelajaran</h2>
+                                            <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">Admin / Wali Kelas</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-0.5">Rekapitulasi lengkap nilai seluruh siswa dari database cloud.</p>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                        <button
+                                            onClick={downloadAllSiswaWord}
+                                            disabled={isBulkWordGenerating}
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                        >
+                                            {isBulkWordGenerating ? (
+                                                <>
+                                                    <i className="fa-solid fa-spinner fa-spin"></i>
+                                                    <span>Memproses ({bulkProgress.current}/{bulkProgress.total})...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <i className="fa-solid fa-file-word"></i>
+                                                    <span>Download All Word Gabungan</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={() => setShowSingleModal(true)}
+                                            className="bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <i className="fa-solid fa-file-word"></i>
+                                            <span>Unduh Word Per Siswa</span>
+                                        </button>
+                                        <button
+                                            onClick={exportToExcel}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <i className="fa-solid fa-file-excel"></i>
+                                            <span>Unduh Master Excel</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto max-h-[70vh]">
+                                    <table className="w-full text-left border-collapse whitespace-nowrap">
+                                        <thead>
+                                            <tr className="bg-emerald-900 text-white text-xs uppercase tracking-wider">
+                                                <th rowSpan="2" className="py-3 px-3 text-center sticky-col-header z-30 border-r border-emerald-700 w-12">No</th>
+                                                <th rowSpan="2" className="py-3 px-4 sticky-col-header z-30 border-r border-emerald-700 left-12 min-w-[200px]">Nama Siswa</th>
+                                                {LIST_MAPEL.map(mapel => (
+                                                    <th key={mapel} colSpan="3" className="py-2 px-3 text-center border-r border-emerald-700 bg-emerald-800">
+                                                        {mapel}
+                                                    </th>
+                                                ))}
+                                                <th rowSpan="2" className="py-3 px-4 text-center bg-emerald-900 z-20">Aksi</th>
+                                            </tr>
+                                            <tr className="bg-emerald-800 text-white text-[11px] uppercase tracking-wider">
+                                                {LIST_MAPEL.map(mapel => (
+                                                    <React.Fragment key={mapel + '-sub'}>
+                                                        <th className="py-2 px-2 text-center border-r border-emerald-700 bg-emerald-800/90 w-14">PH 1</th>
+                                                        <th className="py-2 px-2 text-center border-r border-emerald-700 bg-emerald-800/90 w-14">PH 2</th>
+                                                        <th className="py-2 px-2 text-center border-r border-emerald-700 bg-emerald-800/90 w-14">PTS</th>
+                                                    </React.Fragment>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-xs">
+                                            {DEFAULT_SISWA.map((nama, idx) => (
+                                                <tr key={nama} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="py-3 px-3 text-center font-medium text-slate-500 sticky-col bg-white border-r border-slate-100">{idx + 1}</td>
+                                                    <td className="py-3 px-4 font-semibold text-slate-800 sticky-col bg-white border-r border-slate-100 left-12">{nama}</td>
+                                                    {LIST_MAPEL.map(mapel => {
+                                                        const score = gradesData[nama]?.[mapel] || { ph1: '', ph2: '', pts: '' };
+                                                        return (
+                                                            <React.Fragment key={mapel + '-' + nama}>
+                                                                <td className="py-3 px-2 text-center border-r border-slate-100 font-medium text-slate-700">{score.ph1 !== '' ? score.ph1 : '-'}</td>
+                                                                <td className="py-3 px-2 text-center border-r border-slate-100 font-medium text-slate-700">{score.ph2 !== '' ? score.ph2 : '-'}</td>
+                                                                <td className="py-3 px-2 text-center border-r border-slate-100 font-medium text-slate-700">{score.pts !== '' ? score.pts : '-'}</td>
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                    <td className="py-2 px-4 text-center bg-slate-50/50">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedSiswaSingle(nama);
+                                                                setShowSingleModal(true);
+                                                            }}
+                                                            className="bg-sky-50 hover:bg-sky-100 text-sky-700 font-semibold px-3 py-1.5 rounded-lg border border-sky-200 transition-all text-xs flex items-center gap-1.5 mx-auto"
+                                                        >
+                                                            <i className="fa-solid fa-file-word"></i>
+                                                            <span>Word</span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Admin Login Modal */}
+                    {showAdminModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex items-center space-x-2.5">
+                                        <div className="bg-emerald-100 p-2 rounded-xl text-emerald-700"><i className="fa-solid fa-lock text-lg"></i></div>
+                                        <h3 className="text-base font-bold text-slate-800">Proteksi Master Rekap</h3>
+                                    </div>
+                                    <button onClick={() => setShowAdminModal(false)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-lg"></i></button>
+                                </div>
+                                <form onSubmit={handleAdminLogin}>
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">PASSWORD ADMIN</label>
+                                        <input
+                                            type="password"
+                                            value={adminPassword}
+                                            onChange={(e) => setAdminPassword(e.target.value)}
+                                            placeholder="Masukkan password..."
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            autoFocus
+                                        />
+                                        {adminError && <p className="text-xs text-red-600 mt-1.5 font-medium">{adminError}</p>}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button type="button" onClick={() => setShowAdminModal(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2.5 rounded-xl">Batal</button>
+                                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-2.5 rounded-xl shadow-sm">Masuk</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal Word Per Siswa */}
+                    {showSingleModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+                            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 border border-slate-100 my-8">
+                                <div className="flex justify-between items-center mb-4 border-b pb-3">
+                                    <div className="flex items-center space-x-2.5">
+                                        <div className="bg-sky-100 p-2 rounded-xl text-sky-700"><i className="fa-solid fa-file-word text-lg"></i></div>
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-800">Preview & Unduh Word Raport Per Siswa</h3>
+                                            <p className="text-xs text-slate-500">SMPN 38 Bandar Lampung</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowSingleModal(false)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-lg"></i></button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">PILIH NAMA SISWA</label>
+                                        <select
+                                            value={selectedSiswaSingle}
+                                            onChange={(e) => setSelectedSiswaSingle(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                        >
+                                            {DEFAULT_SISWA.map(nama => <option key={nama} value={nama}>{nama}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">Sakit</label>
+                                            <input type="number" min="0" value={attendance.sakit} onChange={(e) => setAttendance({...attendance, sakit: e.target.value})} placeholder="0" className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-2 text-xs text-center font-medium"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">Ijin</label>
+                                            <input type="number" min="0" value={attendance.ijin} onChange={(e) => setAttendance({...attendance, ijin: e.target.value})} placeholder="0" className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-2 text-xs text-center font-medium"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">Alpa</label>
+                                            <input type="number" min="0" value={attendance.alpa} onChange={(e) => setAttendance({...attendance, alpa: e.target.value})} placeholder="0" className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-2 text-xs text-center font-medium"/>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-slate-300 rounded-xl p-4 bg-white overflow-y-auto max-h-[55vh] shadow-inner mb-6">
+                                    <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="text-xs text-slate-700 font-medium">
+                                            <i className="fa-solid fa-image text-emerald-600 mr-1.5"></i>
+                                            <span>Sesuaikan Logo Kop Surat:</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 transition-all flex items-center gap-1.5">
+                                                <i className="fa-solid fa-upload"></i>
+                                                <span>Logo Kota</span>
+                                                <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'kota')} className="hidden" />
+                                            </label>
+                                            <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 transition-all flex items-center gap-1.5">
+                                                <i className="fa-solid fa-upload"></i>
+                                                <span>Logo Sekolah</span>
+                                                <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'sekolah')} className="hidden" />
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white text-black p-4 font-sans text-xs max-w-[210mm] mx-auto box-border" dangerouslySetInnerHTML={{ __html: getWordHtmlString(selectedSiswaSingle) }} />
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setShowSingleModal(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2.5 rounded-xl">Batal</button>
+                                    <button type="button" onClick={downloadWordReport} disabled={isWordGenerating} className="flex-1 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-2">
+                                        {isWordGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-download"></i>}
+                                        <span>Download File Word (.docx)</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <footer className="mt-auto py-4 text-center text-xs text-slate-400 border-t border-slate-100 bg-white">
+                        <p>© 2026 Sistem Raport Siswa Realtime • SMP Negeri 38 Bandar Lampung</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
